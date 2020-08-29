@@ -1,14 +1,13 @@
 import * as colors from 'kleur/colors';
 import path from 'path';
 import {Plugin} from 'rollup';
-import {logger} from '../logger';
-import {InstallTarget} from '../types/snowpack';
+import {InstallTarget} from '../types';
 
 function autoDetectExports(fileLoc: string): string[] | undefined {
   try {
     return Object.keys(require(fileLoc)).filter((imp) => imp !== 'default');
   } catch (err) {
-    logger.error(`✘ Could not auto-detect exports for ${colors.bold(fileLoc)}
+    console.error(`✘ Could not auto-detect exports for ${colors.bold(fileLoc)}
 ${err.message}`);
   }
 }

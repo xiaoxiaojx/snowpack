@@ -55,7 +55,8 @@ import {createImportResolver} from '../build/import-resolver';
 import srcFileExtensionMapping from '../build/src-file-extension-mapping';
 import {EsmHmrEngine} from '../hmr-server-engine';
 import {logger} from '../logger';
-import {resolveDependencyByName, resolveDependencyByUrl} from '../resolve-remote';
+// TODO: convert a long URL to a specifier';
+import {resolveDependencyByName, resolveDependencyByUrl} from 'skypack';
 import {
   scanCodeImportsExports,
   transformEsmImports,
@@ -336,10 +337,11 @@ export async function command(commandOptions: CommandOptions) {
 
   async function fetchWebModule(installUrl: string): Promise<string> {
     let body: string;
-    if (installUrl.startsWith('-/')) {
-      body = (await resolveDependencyByUrl(`/${installUrl}`)).body;
+  if (installUrl.startsWith('/-/') || installUrl.startsWith('/pin/') || installUrl.startsWith('/error/')) {
+      body = (await resolveDependencyByUrl(installUrl)).body;
     } else {
-      body = (await resolveDependencyByName(installUrl, 'latest', lockfile)).body;
+      // TODO: convert a long (deep) specifier to a package name, but then pass the specifier down to the function
+      body = (await resolveDependencyByName(installUrl.substr(1), (config.webDependencies || {})[installUrl] || 'latest', lockfile)).body;
     }
     return (body as string)
       .replace(/(from|import) \'\//g, `$1 '/__snowpack__/web_modules/`)
@@ -382,7 +384,7 @@ export async function command(commandOptions: CommandOptions) {
     }
     const webModulePrefix = getMetaUrlPath('web_modules', config);
     if (reqPath.startsWith(getMetaUrlPath('/web_modules/', config))) {
-      const code = await fetchWebModule(reqPath.substr(webModulePrefix.length + 1));
+      const code = await fetchWebModule(reqPath.substr(webModulePrefix.length));
       sendFile(req, res, code, reqPath, '.js');
       return;
     }

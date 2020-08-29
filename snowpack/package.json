@@ -89,6 +89,7 @@
     "rollup": "^2.23.0",
     "rollup-plugin-node-polyfills": "^0.2.1",
     "signal-exit": "^3.0.3",
+    "skypack": "^0.0.1",
     "strip-comments": "^2.0.1",
     "tar": "^6.0.1",
     "validate-npm-package-name": "^3.0.0",

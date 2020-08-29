@@ -1,9 +1,33 @@
 import cacache from 'cacache';
 import * as colors from 'kleur/colors';
-import {logger} from './logger';
-import {ImportMap, SnowpackConfig} from './types/snowpack';
-import {fetchCDNResource, PIKA_CDN, RESOURCE_CACHE} from './util.js';
 import PQueue from 'p-queue/dist';
+import got, {Response} from 'got';
+import { PIKA_CDN, RESOURCE_CACHE } from './util';
+import { ImportMap } from './types';
+
+export {run} from './install';
+
+const inMemoryCDNCache = new Map<string, Response>();
+export async function fetchCDNResource(
+  resourceUrl: string,
+  responseType?: 'text' | 'json' | 'buffer',
+): Promise<Response> {
+  if (!resourceUrl.startsWith(PIKA_CDN)) {
+    resourceUrl = PIKA_CDN + resourceUrl;
+  }
+  if (inMemoryCDNCache.has(resourceUrl)) {
+    return inMemoryCDNCache.get(resourceUrl)!;
+  }
+  const response = await got(resourceUrl, {
+    responseType: responseType,
+    headers: {'user-agent': `snowpack/v1.4 (https://snowpack.dev)`},
+    throwHttpErrors: false,
+  });
+  if (response.headers?.['cache-control']?.includes('max-age=')) {
+    inMemoryCDNCache.set(resourceUrl, response);
+  }
+  return response;
+}
 
 /**
  * Given an install specifier, attempt to resolve it from the CDN.
@@ -28,14 +52,14 @@ export async function resolveDependencyByName(
   // If we follow spec, we need an import map entry for each specifier:
   //      This means dev workflow needs a way to add lockfile entries. How do we keep this manageable?
   // If we break from spec a bit, we can use a parent entry:
-  //       Problem is how do we get the proper entry URL in that case? 
+  //       Problem is how do we get the proper entry URL in that case?
 
   if (lockfile && lockfile.imports[installSpecifier]) {
     installUrl = lockfile.imports[installSpecifier];
     installUrlType = 'pin';
   } else {
     if (packageSemver === 'latest') {
-      logger.warn(
+      console.warn(
         `warn(${installSpecifier}): Not found in "dependencies". Using latest package version...`,
       );
     }
@@ -53,11 +77,11 @@ export async function resolveDependencyByName(
     // Annoying logic to add the "latest" string at the right place for scopes vs. non-scoped packages
     const [specPart1, specPart2, ...specParts] = installSpecifier.split('/');
     if (specPart1.startsWith('@')) {
-      installUrl = `${PIKA_CDN}/${specPart1}/${specPart2}@${packageSemver}${specParts.map(
+      installUrl = `${PIKA_CDN}/${specPart1}/${specPart2}@${packageSemver}${specParts.filter(Boolean).map(
         (p) => '/' + p,
       )}`;
     } else {
-      installUrl = `${PIKA_CDN}/${specPart1}/@${packageSemver}${[specPart2, ...specParts].map(
+      installUrl = `${PIKA_CDN}/${specPart1}@${packageSemver}${[specPart2, ...specParts].filter(Boolean).map(
         (p) => '/' + p,
       )}`;
     }
@@ -85,7 +109,7 @@ export async function resolveDependencyByName(
   if (!canRetry || buildStatus === 'FAIL') {
     throw new Error(`Failed to build: ${installSpecifier}@${packageSemver}`);
   }
-  logger.info(
+  console.log(
     colors.cyan(
       `Building ${installSpecifier}@${packageSemver}... (This takes a moment, but will be cached for future use)`,
     ),
@@ -125,7 +149,7 @@ export async function resolveDependencyByUrl(
   // Otherwise, resolve from the CDN remotely.
   const {statusCode, headers, body} = await fetchCDNResource(installUrl);
   if (statusCode !== 200) {
-    logger.warn(`Failed to resolve [${statusCode}]: ${installUrl} (${body})`);
+    console.warn(`Failed to resolve [${statusCode}]: ${installUrl} (${body})`);
     throw new Error(`Failed to resolve [${statusCode}]: ${installUrl} (${body})`);
   }
 
@@ -140,12 +164,15 @@ export async function resolveDependencyByUrl(
   return {body: body as string, pinnedUrl: installUrl};
 }
 
-export async function generateNewLockfile(lockfile: ImportMap | null, config: SnowpackConfig) {
+export async function generateImportMap(
+  webDependencies: Record<string, string>,
+  lockfile: ImportMap | null,
+) {
   const downloadQueue = new PQueue({concurrency: 16});
   const newLockfile: ImportMap = {imports: {}};
   let resolutionError: Error | undefined;
 
-  for (const [installSpecifier, installSemver] of Object.entries(config.webDependencies!)) {
+  for (const [installSpecifier, installSemver] of Object.entries(webDependencies)) {
     downloadQueue.add(async () => {
       try {
         const {pinnedUrl} = await resolveDependencyByName(
@@ -166,4 +193,13 @@ export async function generateNewLockfile(lockfile: ImportMap | null, config: Sn
   }
 
   return newLockfile;
+}
+
+export async function clearCache() {
+  return Promise.all([cacache.rm.all(RESOURCE_CACHE)]);
+}
+
+
+export async function cli(args: string[]) {
+  console.log(args);
 }

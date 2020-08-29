@@ -2,7 +2,7 @@ import {promises as fs} from 'fs';
 import got from 'got';
 import path from 'path';
 import {CommandOptions} from '../types/snowpack';
-import { generateNewLockfile } from '../resolve-remote';
+import { generateImportMap } from 'skypack';
 import { writeLockfile } from '../util';
 
 export async function addCommand(addValue: string, commandOptions: CommandOptions) {
@@ -17,7 +17,7 @@ export async function addCommand(addValue: string, commandOptions: CommandOption
   config.webDependencies = config.webDependencies || {};
   config.webDependencies[pkgName] = pkgSemver;
   await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify(pkgManifest, null, 2));
-  const newLockfile = await generateNewLockfile(lockfile, config);
+  const newLockfile = await generateImportMap(config.webDependencies, lockfile);
   await writeLockfile(path.join(cwd, 'snowpack.lock.json'), newLockfile);
 }
 
@@ -29,6 +29,6 @@ export async function rmCommand(addValue: string, commandOptions: CommandOptions
   config.webDependencies = config.webDependencies || {};
   delete config.webDependencies[pkgName];
   await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify(pkgManifest, null, 2));
-  const newLockfile = await generateNewLockfile(lockfile, config);
+  const newLockfile = await generateImportMap(config.webDependencies, lockfile);
   await writeLockfile(path.join(cwd, 'snowpack.lock.json'), newLockfile);
 }

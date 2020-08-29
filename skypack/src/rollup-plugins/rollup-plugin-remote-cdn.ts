@@ -5,8 +5,8 @@ import path from 'path';
 import {OutputOptions, Plugin, ResolvedId} from 'rollup';
 import tar from 'tar';
 import url from 'url';
-import {fetchCDNResource, HAS_CDN_HASH_REGEX, PIKA_CDN, RESOURCE_CACHE} from '../util';
-import { logger } from '../logger';
+import {fetchCDNResource} from '../index';
+import {PIKA_CDN, HAS_CDN_HASH_REGEX, RESOURCE_CACHE} from '../util';
 
 const CACHED_FILE_ID_PREFIX = 'snowpack-pkg-cache:';
 const PIKA_CDN_TRIM_LENGTH = PIKA_CDN.length;
@@ -41,7 +41,7 @@ export function rollupPluginDependencyCache({
       // If the source path is a CDN path including a hash, it's assumed the
       // file will never change and it is safe to pull from our local cache
       // without a network request.
-      logger.debug(`resolve ${cacheKey}`, {name: 'install:remote'});
+      console.debug(`resolve ${cacheKey}`, {name: 'install:remote'});
       if (HAS_CDN_HASH_REGEX.test(cacheKey)) {
         const cachedResult = await cacache.get
           .info(RESOURCE_CACHE, cacheKey)
@@ -84,7 +84,7 @@ export function rollupPluginDependencyCache({
         return null;
       }
       const cacheKey = id.substring(CACHED_FILE_ID_PREFIX.length);
-      logger.debug(`load ${cacheKey}`, {name: 'install:remote'});
+      console.debug(`load ${cacheKey}`, {name: 'install:remote'});
       const cachedResult = await cacache.get(RESOURCE_CACHE, cacheKey);
       const typesUrl: string | undefined = cachedResult.metadata?.typesUrl;
       if (typesUrl && installTypes) {

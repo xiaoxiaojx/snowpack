@@ -1,0 +1,50 @@
+{
+  "name": "skypack",
+  "version": "0.0.1",
+  "description": "Install packages from Skypack",
+  "author": "Fred K. Schott <fkschott@gmail.com>",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "directory": "pkg"
+  },
+  "scripts": {
+    "build": "pika build",
+    "version": "pika build"
+  },
+  "types": "pkg/dist-types/index.d.ts",
+  "main": "pkg/dist-node/index.js",
+  "bin": {
+    "skypack": "pkg/dist-node/index.bin.js"
+  },
+  "engines": {
+    "node": ">=10.19.0"
+  },
+  "@pika/pack": {
+    "pipeline": [
+      [
+        "@pika/plugin-ts-standard-pkg"
+      ],
+      [
+        "@pika/plugin-build-node"
+      ],
+      [
+        "@pika/plugin-simple-bin",
+        {
+          "bin": "skypack",
+          "minNodeVersion": 10
+        }
+      ]
+    ]
+  },
+  "dependencies": {
+    "cacache": "^15.0.0",
+    "cachedir": "^2.3.0",
+    "got": "^11.1.4",
+    "kleur": "^4.1.0",
+    "p-queue": "^6.2.1",
+    "rimraf": "^3.0.0",
+    "rollup": "^2.23.0",
+    "validate-npm-package-name": "^3.0.0"
+  }
+}

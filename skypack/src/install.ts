@@ -6,23 +6,23 @@ import {performance} from 'perf_hooks';
 import rimraf from 'rimraf';
 import {InputOptions, OutputOptions, rollup, RollupError} from 'rollup';
 import validatePackageName from 'validate-npm-package-name';
-import {logger} from '../logger';
-import {rollupPluginDependencyCache} from '../rollup-plugins/rollup-plugin-remote-cdn.js';
-import {rollupPluginDependencyStats} from '../rollup-plugins/rollup-plugin-stats.js';
-import {rollupPluginWrapInstallTargets} from '../rollup-plugins/rollup-plugin-wrap-install-targets';
+import {rollupPluginDependencyCache} from './rollup-plugins/rollup-plugin-remote-cdn';
+import {rollupPluginDependencyStats} from './rollup-plugins/rollup-plugin-stats';
+import {rollupPluginWrapInstallTargets} from './rollup-plugins/rollup-plugin-wrap-install-targets';
 import {
   CommandOptions,
   DependencyStatsOutput,
   ImportMap,
   InstallTarget,
   SnowpackConfig,
-} from '../types/snowpack';
+} from './types';
 import {
   findMatchingAliasEntry,
   MISSING_PLUGIN_SUGGESTIONS,
   sanitizePackageName,
   writeLockfile,
-} from '../util.js';
+} from './util';
+
 
 // Add popular CJS packages here that use "synthetic" named imports in their documentation.
 // CJS packages should really only be imported via the default export:
@@ -89,7 +89,7 @@ async function install(
       )
       .map((dep) => dep.specifier)
       .map((specifier) => {
-        const aliasEntry = findMatchingAliasEntry(config, specifier);
+        const aliasEntry = findMatchingAliasEntry(config.alias, specifier);
         return aliasEntry && aliasEntry.type === 'package' ? aliasEntry.to : specifier;
       })
       .sort(),
@@ -135,7 +135,7 @@ async function install(
   if (Object.keys(installEntrypoints).length > 0) {
     try {
       const packageBundle = await rollup(inputOptions);
-      logger.debug(
+      console.debug(
         `installing npm packages:\n    ${Object.keys(installEntrypoints).join('\n    ')}`,
       );
       await packageBundle.write(outputOptions);
@@ -152,7 +152,7 @@ async function install(
       const suggestion = MISSING_PLUGIN_SUGGESTIONS[failedExtension] || err.message;
       // Display posix-style on all environments, mainly to help with CI :)
       const fileName = path.relative(cwd, errFilePath).replace(/\\/g, '/');
-      logger.error(`Failed to load ${colors.bold(fileName)}\n  ${suggestion}`);
+      console.error(`Failed to load ${colors.bold(fileName)}\n  ${suggestion}`);
       throw new Error(FAILED_INSTALL_MESSAGE);
     }
   }
@@ -193,7 +193,7 @@ export async function run({
 
   // start
   const installStart = performance.now();
-  logger.info(colors.yellow('! installing dependencies…'));
+  console.info(colors.yellow('! installing dependencies…'));
 
   dependencyStats = null;
 
@@ -212,19 +212,19 @@ export async function run({
     config,
   }).catch((err) => {
     if (err.loc) {
-      logger.error(colors.red(colors.bold(`✘ ${err.loc.file}`)));
+      console.error(colors.red(colors.bold(`✘ ${err.loc.file}`)));
     }
     if (err.url) {
-      logger.error(colors.dim(`👉 ${err.url}`));
+      console.error(colors.dim(`👉 ${err.url}`));
     }
-    logger.error(err.message || err);
+    console.error(err.message || err);
     process.exit(1);
   });
 
   // finish
   const installEnd = performance.now();
   const depList = (finalResult.importMap && Object.keys(finalResult.importMap.imports)) || [];
-  logger.info(
+  console.info(
     `${
       depList.length
         ? colors.green(`✔`) + ' install complete'

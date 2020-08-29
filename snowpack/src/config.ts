@@ -22,6 +22,7 @@ import {
   LegacySnowpackPlugin,
   PluginLoadResult,
 } from './types/snowpack';
+import { addTrailingSlash, addLeadingSlash, removeLeadingSlash, removeTrailingSlash } from './util';
 
 const CONFIG_NAME = 'snowpack';
 const ALWAYS_EXCLUDE = ['**/node_modules/**/*', '**/.types/**/*'];
@@ -850,20 +851,4 @@ export function loadAndValidateConfig(flags: CLIFlags, pkgManifest: any): Snowpa
     process.exit(1);
   }
   return configResult!;
-}
-
-export function removeLeadingSlash(path: string) {
-  return path.replace(/^[/\\]+/, '');
-}
-
-export function removeTrailingSlash(path: string) {
-  return path.replace(/[/\\]+$/, '');
-}
-
-export function addLeadingSlash(path: string) {
-  return path.replace(/^\/?/, '/');
-}
-
-export function addTrailingSlash(path: string) {
-  return path.replace(/\/?$/, '/');
 }

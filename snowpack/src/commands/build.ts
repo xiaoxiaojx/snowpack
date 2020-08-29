@@ -17,12 +17,11 @@ import {
 } from '../build/build-import-proxy';
 import {buildFile, runPipelineCleanupStep, runPipelineOptimizeStep} from '../build/build-pipeline';
 import {createImportResolver} from '../build/import-resolver';
-import {removeLeadingSlash} from '../config';
 import {logger} from '../logger';
 import {transformFileImports} from '../rewrite-imports';
 import {CommandOptions, ImportMap, SnowpackConfig, SnowpackSourceFile} from '../types/snowpack';
-import {cssSourceMappingURL, getEncodingType, jsSourceMappingURL, replaceExt} from '../util';
-import {run as installRunner} from '../build/install';
+import {cssSourceMappingURL, getEncodingType, jsSourceMappingURL, replaceExt, removeLeadingSlash} from '../util';
+import {run as installRunner} from 'skypack';
 import {scanImportsFromFiles} from '../scan-imports';
 import { printStats } from '../stats-formatter';
 
@@ -51,7 +50,7 @@ async function installOptimizedDependencies(
   const installResult = await installRunner({
     ...commandOptions,
     installTargets,
-    config: installConfig,
+    config: installConfig as any,
   });
   return installResult;
 }

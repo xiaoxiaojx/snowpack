@@ -1,18 +1,15 @@
-import cacache from 'cacache';
 import globalCacheDir from 'cachedir';
 import etag from 'etag';
-import execa from 'execa';
-import projectCacheDir from 'find-cache-dir';
 import findUp from 'find-up';
 import fs from 'fs';
 import mkdirp from 'mkdirp';
-import open from 'open';
 import path from 'path';
-import rimraf from 'rimraf';
-import {clearCache as clearSkypackCache} from 'skypack';
-import {ImportMap, SnowpackConfig} from './types/snowpack';
+import {ImportMap} from './types';
 
-export const GLOBAL_CACHE_DIR = globalCacheDir('snowpack');
+export const GLOBAL_CACHE_DIR = globalCacheDir('skypack');
+export const RESOURCE_CACHE = path.join(GLOBAL_CACHE_DIR, 'pkg-cache-1.4');
+export const PIKA_CDN = `https://cdn.skypack.dev`;
+export const HAS_CDN_HASH_REGEX = /\-[a-zA-Z0-9]{16,}/;
 
 // A note on cache naming/versioning: We currently version our global caches
 // with the version of the last breaking change. This allows us to re-use the
@@ -21,8 +18,6 @@ export const GLOBAL_CACHE_DIR = globalCacheDir('snowpack');
 // cache name.
 export const BUILD_CACHE = path.join(GLOBAL_CACHE_DIR, 'build-cache-2.7');
 
-export const PROJECT_CACHE_DIR = projectCacheDir({name: 'snowpack'});
-export const DEV_DEPENDENCIES_DIR = path.join(PROJECT_CACHE_DIR, 'dev');
 const LOCKFILE_HASH_FILE = '.hash';
 
 // NOTE(fks): Must match empty script elements to work properly.
@@ -133,83 +128,6 @@ export const MISSING_PLUGIN_SUGGESTIONS: {[ext: string]: string} = {
     'Try installing rollup-plugin-vue and adding it to Snowpack (https://www.snowpack.dev/#custom-rollup-plugins)',
 };
 
-const appNames = {
-  win32: {
-    brave: 'brave',
-    chrome: 'chrome',
-  },
-  darwin: {
-    brave: 'Brave Browser',
-    chrome: 'Google Chrome',
-  },
-  linux: {
-    brave: 'brave',
-    chrome: 'google-chrome',
-  },
-};
-
-export async function openInBrowser(
-  protocol: string,
-  hostname: string,
-  port: number,
-  browser: string,
-) {
-  const url = `${protocol}//${hostname}:${port}`;
-  browser = /chrome/i.test(browser)
-    ? appNames[process.platform]['chrome']
-    : /brave/i.test(browser)
-    ? appNames[process.platform]['brave']
-    : browser;
-  const isMac = process.platform === 'darwin';
-  const isOpeningInChrome = /chrome|default/i.test(browser);
-  if (isMac && isOpeningInChrome) {
-    // If we're on macOS, and we haven't requested a specific browser,
-    // we can try opening Chrome with AppleScript. This lets us reuse an
-    // existing tab when possible instead of creating a new one.
-    try {
-      // see if Chrome process is open; fail if not
-      await execa.command('ps cax | grep "Google Chrome"', {
-        shell: true,
-      });
-      // use open Chrome tab if exists; create new Chrome tab if not
-      const openChrome = execa(
-        'osascript ../assets/openChrome.applescript "' + encodeURI(url) + '"',
-        {
-          cwd: __dirname,
-          stdio: 'ignore',
-          shell: true,
-        },
-      );
-      // if Chrome doesn’t respond within 3s, fall back to opening new tab in default browser
-      let isChromeStalled = setTimeout(() => {
-        openChrome.cancel();
-      }, 3000);
-
-      try {
-        await openChrome;
-      } catch (err) {
-        if (err.isCanceled) {
-          console.warn(
-            `Chrome not responding to Snowpack after 3s. Opening dev server in new tab.`,
-          );
-        } else {
-          console.error(err.toString() || err);
-        }
-        open(url);
-      } finally {
-        clearTimeout(isChromeStalled);
-      }
-      return true;
-    } catch (err) {
-      // if no open Chrome process, open default browser
-      // no error message needed here
-      open(url);
-    }
-  } else {
-    browser === 'default' ? open(url) : open(url, {app: browser});
-  }
-}
-
 export async function checkLockfileHash(dir: string) {
   const lockfileLoc = await findUp(['package-lock.json', 'yarn.lock']);
   if (!lockfileLoc) {
@@ -232,19 +150,11 @@ export async function updateLockfileHash(dir: string) {
   await fs.promises.writeFile(hashLoc, newLockHash);
 }
 
-export async function clearCache() {
-  return Promise.all([
-    clearSkypackCache(),
-    cacache.rm.all(BUILD_CACHE),
-    rimraf.sync(PROJECT_CACHE_DIR),
-  ]);
-}
-
 /**
  * For the given import specifier, return an alias entry if one is matched.
  */
 export function findMatchingAliasEntry(
-  config: SnowpackConfig,
+  alias: Record<string, string>,
   spec: string,
 ): {from: string; to: string; type: 'package' | 'path'} | undefined {
   // Only match bare module specifiers. relative and absolute imports should not match
@@ -260,7 +170,7 @@ export function findMatchingAliasEntry(
     return undefined;
   }
 
-  for (const [from, to] of Object.entries(config.alias)) {
+  for (const [from, to] of Object.entries(alias)) {
     let foundType: 'package' | 'path' = isPackageAliasEntry(to) ? 'package' : 'path';
     const isExactMatch = spec === removeTrailingSlash(from);
     const isDeepMatch = spec.startsWith(addTrailingSlash(from));
