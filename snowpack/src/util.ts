@@ -5,7 +5,7 @@ import execa from 'execa';
 import projectCacheDir from 'find-cache-dir';
 import findUp from 'find-up';
 import fs from 'fs';
-import got, {CancelableRequest, Response} from 'got';
+import got, {Response} from 'got';
 import mkdirp from 'mkdirp';
 import open from 'open';
 import path from 'path';
@@ -13,7 +13,7 @@ import rimraf from 'rimraf';
 import {ImportMap, SnowpackConfig} from './types/snowpack';
 import {removeTrailingSlash, addTrailingSlash} from './config';
 
-export const PIKA_CDN = `https://cdn.pika.dev`;
+export const PIKA_CDN = `https://cdn.skypack.dev`;
 export const GLOBAL_CACHE_DIR = globalCacheDir('snowpack');
 
 // A note on cache naming/versioning: We currently version our global caches
@@ -62,19 +62,26 @@ export async function writeLockfile(loc: string, importMap: ImportMap): Promise<
   fs.writeFileSync(loc, JSON.stringify(sortedImportMap, undefined, 2), {encoding: 'utf-8'});
 }
 
-export function fetchCDNResource(
+const inMemoryCDNCache = new Map<string, Response>();
+export async function fetchCDNResource(
   resourceUrl: string,
   responseType?: 'text' | 'json' | 'buffer',
-): Promise<CancelableRequest<Response>> {
+): Promise<Response> {
   if (!resourceUrl.startsWith(PIKA_CDN)) {
     resourceUrl = PIKA_CDN + resourceUrl;
   }
-  // @ts-ignore - TS doesn't like responseType being unknown amount three options
-  return got(resourceUrl, {
+  if (inMemoryCDNCache.has(resourceUrl)) {
+    return inMemoryCDNCache.get(resourceUrl)!;
+  }
+  const response = await got(resourceUrl, {
     responseType: responseType,
     headers: {'user-agent': `snowpack/v1.4 (https://snowpack.dev)`},
     throwHttpErrors: false,
   });
+  if (response.headers?.['cache-control']?.includes('max-age=')) {
+    inMemoryCDNCache.set(resourceUrl, response);
+  }
+  return response;
 }
 
 export function isTruthy<T>(item: T | false | null | undefined): item is T {

@@ -46,7 +46,6 @@ function resolveSourceSpecifier(spec: string, stats: fs.Stats | false, config: S
  */
 export function createImportResolver({
   fileLoc,
-  dependencyImportMap,
   config,
 }: ImportResolverOptions) {
   return function importResolver(spec: string): string | false {
@@ -71,14 +70,6 @@ export function createImportResolver({
       }
       return result;
     }
-    if (dependencyImportMap) {
-      // NOTE: We don't need special handling for an alias here, since the aliased "from"
-      // is already the key in the import map. The aliased "to" value is also an entry.
-      const importMapEntry = dependencyImportMap.imports[spec];
-      if (importMapEntry) {
-        return path.posix.resolve(config.buildOptions.webModulesUrl, importMapEntry);
-      }
-    }
-    return false;
+    return path.posix.join('/', config.buildOptions.metaDir, 'web_modules', spec);
   };
 }

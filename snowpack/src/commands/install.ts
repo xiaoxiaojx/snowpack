@@ -14,7 +14,7 @@ import rimraf from 'rimraf';
 import {InputOptions, OutputOptions, rollup, RollupError} from 'rollup';
 import validatePackageName from 'validate-npm-package-name';
 import {logger} from '../logger';
-import {resolveTargetsFromRemoteCDN} from '../resolve-remote.js';
+// import {resolveTargetsFromRemoteCDN} from '../resolve-remote.js';
 import {rollupPluginCatchUnresolved} from '../rollup-plugins/rollup-plugin-catch-unresolved.js';
 import {rollupPluginCatchFetch} from '../rollup-plugins/rollup-plugin-catch-fetch';
 import {rollupPluginCss} from '../rollup-plugins/rollup-plugin-css';
@@ -518,10 +518,11 @@ export async function run({
 
   let newLockfile: ImportMap | null = null;
   if (webDependencies && Object.keys(webDependencies).length > 0) {
-    newLockfile = await resolveTargetsFromRemoteCDN(lockfile, config).catch((err) => {
-      logger.error('\n' + err.message || err);
-      process.exit(1);
-    });
+    console.log(lockfile);
+    // newLockfile = await resolveTargetsFromRemoteCDN(lockfile, config).catch((err) => {
+    //   logger.error('\n' + err.message || err);
+    //   process.exit(1);
+    // });
   }
 
   rimraf.sync(dest);

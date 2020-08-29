@@ -26,10 +26,9 @@
 
 import cacache from 'cacache';
 import isCompressible from 'compressible';
-import merge from 'deepmerge';
 import etag from 'etag';
 import {EventEmitter} from 'events';
-import {existsSync, promises as fs, readFileSync, statSync, createReadStream} from 'fs';
+import {createReadStream, promises as fs, readFileSync, statSync} from 'fs';
 import http from 'http';
 import HttpProxy from 'http-proxy';
 import http2 from 'http2';
@@ -56,6 +55,7 @@ import {createImportResolver} from '../build/import-resolver';
 import srcFileExtensionMapping from '../build/src-file-extension-mapping';
 import {EsmHmrEngine} from '../hmr-server-engine';
 import {logger} from '../logger';
+import {resolveDependencyByName, resolveDependencyByUrl} from '../resolve-remote';
 import {
   scanCodeImportsExports,
   transformEsmImports,
@@ -65,7 +65,6 @@ import {matchImportSpecifier} from '../scan-imports';
 import {CommandOptions, ImportMap, SnowpackBuildMap, SnowpackConfig} from '../types/snowpack';
 import {
   BUILD_CACHE,
-  checkLockfileHash,
   cssSourceMappingURL,
   DEV_DEPENDENCIES_DIR,
   getEncodingType,
@@ -75,9 +74,7 @@ import {
   parsePackageImportSpecifier,
   replaceExt,
   resolveDependencyManifest,
-  updateLockfileHash,
 } from '../util';
-import {command as installCommand} from './install';
 import {getPort, paint, paintEvent} from './paint';
 const HMR_DEV_CODE = readFileSync(path.join(__dirname, '../assets/hmr.js'));
 
@@ -202,7 +199,7 @@ function getUrlFromFile(
 }
 
 export async function command(commandOptions: CommandOptions) {
-  const {cwd, config} = commandOptions;
+  const {cwd, config, lockfile} = commandOptions;
   const {port: defaultPort, hostname, open, hmr: isHmr} = config.devOptions;
 
   // Start the startup timer!
@@ -242,22 +239,22 @@ export async function command(commandOptions: CommandOptions) {
 
   // Set the proper install options, in case an install is needed.
   const dependencyImportMapLoc = path.join(DEV_DEPENDENCIES_DIR, 'import-map.json');
-  const installCommandOptions = merge(commandOptions, {
-    config: {
-      installOptions: {
-        dest: DEV_DEPENDENCIES_DIR,
-        env: {NODE_ENV: process.env.NODE_ENV || 'development'},
-        treeshake: false,
-      },
-    },
-  });
+  // const installCommandOptions = merge(commandOptions, {
+  //   config: {
+  //     installOptions: {
+  //       dest: DEV_DEPENDENCIES_DIR,
+  //       env: {NODE_ENV: process.env.NODE_ENV || 'development'},
+  //       treeshake: false,
+  //     },
+  //   },
+  // });
 
   // Start with a fresh install of your dependencies, if needed.
-  if (!(await checkLockfileHash(DEV_DEPENDENCIES_DIR)) || !existsSync(dependencyImportMapLoc)) {
-    logger.info(colors.yellow('! updating dependencies...'));
-    await installCommand(installCommandOptions);
-    await updateLockfileHash(DEV_DEPENDENCIES_DIR);
-  }
+  // if (!(await checkLockfileHash(DEV_DEPENDENCIES_DIR)) || !existsSync(dependencyImportMapLoc)) {
+  //   logger.info(colors.yellow('! updating dependencies...'));
+  //   await installCommand(installCommandOptions);
+  //   await updateLockfileHash(DEV_DEPENDENCIES_DIR);
+  // }
 
   let dependencyImportMap: ImportMap = {imports: {}};
   try {
@@ -337,6 +334,17 @@ export async function command(commandOptions: CommandOptions) {
     }
   }
 
+  async function fetchWebModule(installUrl: string): Promise<string> {
+    let body: string;
+    if (installUrl.startsWith('-/')) {
+      body = (await resolveDependencyByUrl(`/${installUrl}`)).body;
+    } else {
+      body = (await resolveDependencyByName(installUrl, 'latest', lockfile)).body;
+    }
+    return (body as string)
+      .replace(/(from|import) \'\//g, `$1 '/__snowpack__/web_modules/`)
+      .replace(/(from|import) \"\//g, `$1 "/__snowpack__/web_modules/`);
+  }
   async function requestHandler(req: http.IncomingMessage, res: http.ServerResponse) {
     const reqUrl = req.url!;
     const reqUrlHmrParam = reqUrl.includes('?mtime=') && reqUrl.split('?')[1];
@@ -370,6 +378,12 @@ export async function command(commandOptions: CommandOptions) {
     }
     if (reqPath === getMetaUrlPath('/env.js', config)) {
       sendFile(req, res, generateEnvModule('development'), reqPath, '.js');
+      return;
+    }
+    const webModulePrefix = getMetaUrlPath('web_modules', config);
+    if (reqPath.startsWith(getMetaUrlPath('/web_modules/', config))) {
+      const code = await fetchWebModule(reqPath.substr(webModulePrefix.length + 1));
+      sendFile(req, res, code, reqPath, '.js');
       return;
     }
 
@@ -552,7 +566,7 @@ export async function command(commandOptions: CommandOptions) {
     ): Promise<string> {
       const resolveImportSpecifier = createImportResolver({
         fileLoc,
-        dependencyImportMap,
+        dependencyImportMap: lockfile,
         config,
       });
       wrappedResponse = await transformFileImports(
