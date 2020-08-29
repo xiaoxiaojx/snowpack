@@ -566,7 +566,6 @@ export async function command(commandOptions: CommandOptions) {
     ): Promise<string> {
       const resolveImportSpecifier = createImportResolver({
         fileLoc,
-        dependencyImportMap: lockfile,
         config,
       });
       wrappedResponse = await transformFileImports(

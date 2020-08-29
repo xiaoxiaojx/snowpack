@@ -22,7 +22,8 @@ import {logger} from '../logger';
 import {transformFileImports} from '../rewrite-imports';
 import {CommandOptions, ImportMap, SnowpackConfig, SnowpackSourceFile} from '../types/snowpack';
 import {cssSourceMappingURL, getEncodingType, jsSourceMappingURL, replaceExt} from '../util';
-import {getInstallTargets, run as installRunner} from './install';
+import {run as installRunner} from './build-install';
+import {scanImportsFromFiles} from '../scan-imports';
 
 const CONCURRENT_WORKERS = require('os').cpus().length;
 
@@ -44,7 +45,7 @@ async function installOptimizedDependencies(
   // will can scan all used entrypoints. Set to `[]` to improve tree-shaking performance.
   installConfig.knownEntrypoints = [];
   // 1. Scan imports from your final built JS files.
-  const installTargets = await getInstallTargets(installConfig, scannedFiles);
+  const installTargets = await scanImportsFromFiles(scannedFiles, commandOptions.config);
   // 2. Install dependencies, based on the scan of your final build.
   const installResult = await installRunner({
     ...commandOptions,
@@ -162,7 +163,7 @@ class FileBuilder {
     for (const [outLoc, file] of Object.entries(this.filesToResolve)) {
       const resolveImportSpecifier = createImportResolver({
         fileLoc: file.locOnDisk!, // we’re confident these are reading from disk because we just read them
-        dependencyImportMap: importMap,
+        importMap,
         config: this.config,
       });
       const resolvedCode = await transformFileImports(file, (spec) => {
@@ -173,13 +174,14 @@ class FileBuilder {
         // Until supported, just exit here.
         if (!resolvedImportUrl) {
           isSuccess = false;
-          logger.error(`${file.locOnDisk} - Could not resolve unkonwn import "${spec}".`);
+          logger.error(`${file.locOnDisk} - Could not resolve unknown import "${spec}".`);
           return spec;
         }
         // Ignore "http://*" imports
         if (url.parse(resolvedImportUrl).protocol) {
-          return spec;
+          return resolvedImportUrl;
         }
+
         // Handle normal "./" & "../" import specifiers
         const extName = path.extname(resolvedImportUrl);
         const isProxyImport = extName && extName !== '.js';
@@ -244,7 +246,7 @@ class FileBuilder {
 }
 
 export async function command(commandOptions: CommandOptions) {
-  const {cwd, config} = commandOptions;
+  const {cwd, config, lockfile} = commandOptions;
 
   const buildDirectoryLoc = config.devOptions.out;
   const internalFilesBuildLoc = path.join(buildDirectoryLoc, config.buildOptions.metaDir);
@@ -294,7 +296,11 @@ export async function command(commandOptions: CommandOptions) {
     const scannedFiles = Object.values(buildPipelineFiles)
       .map((f) => Object.values(f.filesToResolve))
       .reduce((flat, item) => flat.concat(item), []);
-    const installDest = path.join(buildDirectoryLoc, config.buildOptions.webModulesUrl);
+    const installDest = path.join(
+      buildDirectoryLoc,
+      config.buildOptions.metaDir,
+      config.buildOptions.webModulesUrl,
+    );
     const installResult = await installOptimizedDependencies(scannedFiles, installDest, {
       ...commandOptions,
     });
@@ -361,8 +367,9 @@ export async function command(commandOptions: CommandOptions) {
   );
 
   // 2. Install all dependencies. This gets us the import map we need to resolve imports.
-  let installResult = await installDependencies();
-
+  const installResult = config.installOptions.treeshake
+    ? await installDependencies()
+    : {importMap: lockfile || {imports: {}}};
   // 3. Resolve all built file imports.
   for (const buildPipelineFile of allBuildPipelineFiles) {
     parallelWorkQueue.add(() => buildPipelineFile.resolveImports(installResult.importMap!));

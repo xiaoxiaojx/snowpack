@@ -318,9 +318,6 @@ ${colors.dim(
       !!webDependencies &&
         rollupPluginDependencyCache({
           installTypes,
-          log: (url) => {
-            logger.debug(`installing ${colors.dim(url)}…`);
-          },
         }),
       rollupPluginAlias({
         entries: Object.entries(installAlias)

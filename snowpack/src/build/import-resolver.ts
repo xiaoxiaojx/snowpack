@@ -1,4 +1,5 @@
 import fs from 'fs';
+import url from 'url';
 import path from 'path';
 import {ImportMap, SnowpackConfig} from '../types/snowpack';
 import {findMatchingAliasEntry, getExt, replaceExt, URL_HAS_PROTOCOL_REGEX} from '../util';
@@ -8,7 +9,7 @@ const cwd = process.cwd();
 
 interface ImportResolverOptions {
   fileLoc: string;
-  dependencyImportMap: ImportMap | null | undefined;
+  importMap?: ImportMap | null;
   config: SnowpackConfig;
 }
 
@@ -47,10 +48,18 @@ function resolveSourceSpecifier(spec: string, stats: fs.Stats | false, config: S
 export function createImportResolver({
   fileLoc,
   config,
+  importMap
 }: ImportResolverOptions) {
   return function importResolver(spec: string): string | false {
     if (URL_HAS_PROTOCOL_REGEX.test(spec)) {
       return spec;
+    }
+    if (importMap && importMap.imports[spec]) {
+      const mappedImport = importMap.imports[spec];
+      if (url.parse(mappedImport).protocol) {
+        return mappedImport;
+      }
+      return path.posix.join('/', config.buildOptions.metaDir, 'web_modules', mappedImport);
     }
     if (spec.startsWith('/') || spec.startsWith('./') || spec.startsWith('../')) {
       const importStats = getImportStats(path.dirname(fileLoc), spec);
