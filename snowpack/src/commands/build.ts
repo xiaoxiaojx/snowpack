@@ -22,8 +22,9 @@ import {logger} from '../logger';
 import {transformFileImports} from '../rewrite-imports';
 import {CommandOptions, ImportMap, SnowpackConfig, SnowpackSourceFile} from '../types/snowpack';
 import {cssSourceMappingURL, getEncodingType, jsSourceMappingURL, replaceExt} from '../util';
-import {run as installRunner} from './build-install';
+import {run as installRunner} from '../build/install';
 import {scanImportsFromFiles} from '../scan-imports';
+import { printStats } from '../stats-formatter';
 
 const CONCURRENT_WORKERS = require('os').cpus().length;
 
@@ -367,12 +368,20 @@ export async function command(commandOptions: CommandOptions) {
   );
 
   // 2. Install all dependencies. This gets us the import map we need to resolve imports.
-  const installResult = config.installOptions.treeshake
-    ? await installDependencies()
-    : {importMap: lockfile || {imports: {}}};
+  let dependencyImportMap: ImportMap;
+  if (config.installOptions.treeshake) {
+    const installResult = await installDependencies();
+    if (!installResult.success || installResult.hasError) {
+      process.exit(1);
+    }
+    dependencyImportMap = installResult.importMap!;
+    logger.info(printStats(installResult.stats!));
+  } else {
+    dependencyImportMap = lockfile || {imports: {}};
+  }
   // 3. Resolve all built file imports.
   for (const buildPipelineFile of allBuildPipelineFiles) {
-    parallelWorkQueue.add(() => buildPipelineFile.resolveImports(installResult.importMap!));
+    parallelWorkQueue.add(() => buildPipelineFile.resolveImports(dependencyImportMap));
   }
   await parallelWorkQueue.onIdle();
 
@@ -450,10 +459,10 @@ export async function command(commandOptions: CommandOptions) {
     // 1. Build the file.
     await changedPipelineFile.buildFile();
     // 2. Resolve any ESM imports. Handle new imports by triggering a re-install.
-    let resolveSuccess = await changedPipelineFile.resolveImports(installResult.importMap!);
+    let resolveSuccess = await changedPipelineFile.resolveImports(dependencyImportMap);
     if (!resolveSuccess) {
       await installDependencies();
-      resolveSuccess = await changedPipelineFile.resolveImports(installResult.importMap!);
+      resolveSuccess = await changedPipelineFile.resolveImports(dependencyImportMap);
       if (!resolveSuccess) {
         logger.error('Exiting...');
         process.exit(1);

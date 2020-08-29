@@ -4,13 +4,11 @@ import yargs from 'yargs-parser';
 import {addCommand, rmCommand} from './commands/add-rm';
 import {command as buildCommand} from './commands/build';
 import {command as devCommand} from './commands/dev';
-import {command as installCommand} from './commands/install';
 import {loadAndValidateConfig} from './config.js';
 import {logger} from './logger';
 import {CLIFlags} from './types/snowpack';
 import {clearCache, readLockfile} from './util.js';
 
-export {install as unstable_installCommand} from './commands/install';
 export {createConfiguration} from './config.js';
 export * from './types/snowpack';
 
@@ -111,11 +109,7 @@ export async function cli(args: string[]) {
     await devCommand(commandOptions);
     return process.exit(0);
   }
-  if (cmd === 'install' || !cmd) {
-    await installCommand(commandOptions);
-    return process.exit(0);
-  }
-
+  
   logger.error(`Unrecognized command: ${cmd}`);
   process.exit(1);
 }

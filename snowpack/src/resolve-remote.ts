@@ -19,10 +19,16 @@ export async function resolveDependencyByName(
   packageSemver: string,
   lockfile: ImportMap | null,
   canRetry = true,
-): Promise<{body: string, pinnedUrl: string}> {
+): Promise<{body: string; pinnedUrl: string}> {
   // Grab the installUrl from our lockfile if it exists, otherwise resolve it yourself.
   let installUrl: string;
   let installUrlType: 'pin' | 'lookup';
+
+  // WIP-REMOTE TODO (but prob not here): how do we handle import maps for things like "svelte/internal"
+  // If we follow spec, we need an import map entry for each specifier:
+  //      This means dev workflow needs a way to add lockfile entries. How do we keep this manageable?
+  // If we break from spec a bit, we can use a parent entry:
+  //       Problem is how do we get the proper entry URL in that case? 
 
   if (lockfile && lockfile.imports[installSpecifier]) {
     installUrl = lockfile.imports[installSpecifier];
@@ -44,7 +50,17 @@ export async function resolveDependencyByName(
       );
     }
     installUrlType = 'lookup';
-    installUrl = `${PIKA_CDN}/${installSpecifier}@${packageSemver}`;
+    // Annoying logic to add the "latest" string at the right place for scopes vs. non-scoped packages
+    const [specPart1, specPart2, ...specParts] = installSpecifier.split('/');
+    if (specPart1.startsWith('@')) {
+      installUrl = `${PIKA_CDN}/${specPart1}/${specPart2}@${packageSemver}${specParts.map(
+        (p) => '/' + p,
+      )}`;
+    } else {
+      installUrl = `${PIKA_CDN}/${specPart1}/@${packageSemver}${[specPart2, ...specParts].map(
+        (p) => '/' + p,
+      )}`;
+    }
   }
 
   // Hashed CDN urls never change, so its safe to grab them directly from the local cache
@@ -56,8 +72,7 @@ export async function resolveDependencyByName(
   // Otherwise, resolve from the CDN remotely.
   const {statusCode, headers, body} = await fetchCDNResource(installUrl);
   if (statusCode !== 200) {
-      throw new Error(
-        `Failed to resolve [${statusCode}]: ${installUrl} (${body})`);
+    throw new Error(`Failed to resolve [${statusCode}]: ${installUrl} (${body})`);
   }
 
   let importUrlPath = headers['x-import-url'] as string;
@@ -68,8 +83,7 @@ export async function resolveDependencyByName(
     return {body: body as string, pinnedUrl: `${PIKA_CDN}${pinnedUrlPath}`};
   }
   if (!canRetry || buildStatus === 'FAIL') {
-    throw new Error(
-      `Failed to build: ${installSpecifier}@${packageSemver}`);
+    throw new Error(`Failed to build: ${installSpecifier}@${packageSemver}`);
   }
   logger.info(
     colors.cyan(
@@ -77,13 +91,11 @@ export async function resolveDependencyByName(
     ),
   );
   if (!importUrlPath) {
-    throw new Error(
-    'X-Import-URL header expected, but none received.');
+    throw new Error('X-Import-URL header expected, but none received.');
   }
   const {statusCode: lookupStatusCode} = await fetchCDNResource(importUrlPath);
   if (lookupStatusCode !== 200) {
-    throw new Error(
-    `Unexpected response [${lookupStatusCode}]: ${PIKA_CDN}${importUrlPath}`);
+    throw new Error(`Unexpected response [${lookupStatusCode}]: ${PIKA_CDN}${importUrlPath}`);
   }
   return resolveDependencyByName(installSpecifier, packageSemver, lockfile, false);
 }
@@ -97,7 +109,9 @@ export async function resolveDependencyByName(
  * All resolved URLs are populated into the local cache, where our internal Rollup engine
  * will load them from when it installs your dependencies to disk.
  */
-export async function resolveDependencyByUrl(installUrl: string): Promise<{body: string, pinnedUrl: string}> {
+export async function resolveDependencyByUrl(
+  installUrl: string,
+): Promise<{body: string; pinnedUrl: string}> {
   if (!installUrl.startsWith(PIKA_CDN)) {
     installUrl = PIKA_CDN + installUrl;
   }
@@ -123,13 +137,10 @@ export async function resolveDependencyByUrl(installUrl: string): Promise<{body:
       metadata: {installUrl, typesUrl},
     });
   }
-    return {body: body as string, pinnedUrl: installUrl};
+  return {body: body as string, pinnedUrl: installUrl};
 }
 
-export async function generateNewLockfile(
-  lockfile: ImportMap | null,
-  config: SnowpackConfig,
-) {
+export async function generateNewLockfile(lockfile: ImportMap | null, config: SnowpackConfig) {
   const downloadQueue = new PQueue({concurrency: 16});
   const newLockfile: ImportMap = {imports: {}};
   let resolutionError: Error | undefined;
@@ -137,7 +148,11 @@ export async function generateNewLockfile(
   for (const [installSpecifier, installSemver] of Object.entries(config.webDependencies!)) {
     downloadQueue.add(async () => {
       try {
-        const {pinnedUrl} = await resolveDependencyByName(installSpecifier, installSemver, lockfile);
+        const {pinnedUrl} = await resolveDependencyByName(
+          installSpecifier,
+          installSemver,
+          lockfile,
+        );
         newLockfile.imports[installSpecifier] = pinnedUrl;
       } catch (err) {
         resolutionError = resolutionError || err;

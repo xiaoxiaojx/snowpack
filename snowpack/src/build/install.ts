@@ -1,5 +1,3 @@
-import {init as initESModuleLexer} from 'es-module-lexer';
-import findUp from 'find-up';
 import fs from 'fs';
 import * as colors from 'kleur/colors';
 import mkdirp from 'mkdirp';
@@ -26,8 +24,6 @@ import {
   writeLockfile,
 } from '../util.js';
 
-type InstallResultCode = 'SUCCESS' | 'ASSET' | 'FAIL';
-
 // Add popular CJS packages here that use "synthetic" named imports in their documentation.
 // CJS packages should really only be imported via the default export:
 //   import React from 'react';
@@ -47,8 +43,6 @@ const CJS_PACKAGES_TO_AUTO_DETECT = [
 ];
 
 const cwd = process.cwd();
-
-let installResults: [string, InstallResultCode][] = [];
 let dependencyStats: DependencyStatsOutput | null = null;
 
 function isImportOfPackage(importUrl: string, packageName: string) {
@@ -73,17 +67,11 @@ interface InstallOptions {
 type InstallResult = {success: false; importMap: null} | {success: true; importMap: ImportMap};
 
 const FAILED_INSTALL_MESSAGE = 'Install failed.';
-const EMPTY_INSTALL_RETURN: InstallResult = {
-  success: false,
-  importMap: null,
-};
-
 async function install(
   installTargets: InstallTarget[],
   {lockfile, config}: InstallOptions,
 ): Promise<InstallResult> {
   const {
-    webDependencies,
     installOptions: {
       installTypes,
       dest: destLoc,
@@ -93,11 +81,6 @@ async function install(
     },
   } = config;
 
-  const nodeModulesInstalled = findUp.sync('node_modules', {cwd, type: 'directory'});
-  if (!webDependencies && !(process.versions as any).pnp && !nodeModulesInstalled) {
-    logger.error('No "node_modules" directory exists. Did you run "npm install" first?');
-    return EMPTY_INSTALL_RETURN;
-  }
   const allInstallSpecifiers = new Set(
     installTargets
       .filter(
@@ -125,22 +108,19 @@ async function install(
     if (lockfile && lockfile.imports[installSpecifier]) {
       installEntrypoints[targetName] = lockfile.imports[installSpecifier];
       importMap.imports[installSpecifier] = `./${proxiedName}.js`;
-      installResults.push([targetName, 'SUCCESS']);
-      continue;
     } else {
-      logger.warn('Ah! ' + installSpecifier);
+      throw new Error(`WIP: Dependency ${installSpecifier} must exist in lockfile to build. Run "add" command.`);
     }
   }
 
-  await initESModuleLexer;
   const inputOptions: InputOptions = {
     input: installEntrypoints,
     treeshake: {moduleSideEffects: 'no-external'},
-    preserveEntrySignatures: "allow-extension",
+    preserveEntrySignatures: 'allow-extension',
     plugins: [
-        rollupPluginDependencyCache({
-          installTypes,
-        }),
+      rollupPluginDependencyCache({
+        installTypes,
+      }),
       rollupPluginWrapInstallTargets(!!isTreeshake, autoDetectNamedExports, installTargets),
       rollupPluginDependencyStats((info) => (dependencyStats = info)),
     ].filter(Boolean) as Plugin[],
@@ -215,7 +195,6 @@ export async function run({
   const installStart = performance.now();
   logger.info(colors.yellow('! installing dependencies…'));
 
-  installResults = [];
   dependencyStats = null;
 
   if (installTargets.length === 0) {
