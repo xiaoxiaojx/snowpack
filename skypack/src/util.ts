@@ -7,8 +7,8 @@ import path from 'path';
 import {ImportMap} from './types';
 
 export const GLOBAL_CACHE_DIR = globalCacheDir('skypack');
-export const RESOURCE_CACHE = path.join(GLOBAL_CACHE_DIR, 'pkg-cache-1.4');
-export const PIKA_CDN = `https://cdn.skypack.dev`;
+export const RESOURCE_CACHE = path.join(GLOBAL_CACHE_DIR, 'pkg-cache-3.0');
+export const SKYPACK_ORIGIN = `https://cdn.skypack.dev`;
 export const HAS_CDN_HASH_REGEX = /\-[a-zA-Z0-9]{16,}/;
 
 // A note on cache naming/versioning: We currently version our global caches
@@ -30,6 +30,16 @@ export const URL_HAS_PROTOCOL_REGEX = /^(\w+:)?\/\//;
 const UTF8_FORMATS = ['.css', '.html', '.js', '.map', '.mjs', '.json', '.svg', '.txt', '.xml'];
 export function getEncodingType(ext: string): 'utf-8' | undefined {
   return UTF8_FORMATS.includes(ext) ? 'utf-8' : undefined;
+}
+
+export function parseRawPackageImport(spec: string): [string, string | null] {
+  const impParts = spec.split('/');
+  if (spec.startsWith('@')) {
+    const [scope, name, ...rest] = impParts;
+    return [`${scope}/${name}`, rest.join('/') || null];
+  }
+  const [name, ...rest] = impParts;
+  return [name, rest.join('/') || null];
 }
 
 export async function readLockfile(cwd: string): Promise<ImportMap | null> {
