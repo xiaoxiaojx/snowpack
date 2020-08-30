@@ -17,7 +17,7 @@ export async function addCommand(addValue: string, commandOptions: CommandOption
   config.webDependencies = config.webDependencies || {};
   config.webDependencies[pkgName] = pkgSemver;
   await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify(pkgManifest, null, 2));
-  const newLockfile = await generateImportMap(config.webDependencies, lockfile);
+  const newLockfile = await generateImportMap(config.webDependencies, lockfile || undefined);
   await writeLockfile(path.join(cwd, 'snowpack.lock.json'), newLockfile);
 }
 
@@ -29,6 +29,6 @@ export async function rmCommand(addValue: string, commandOptions: CommandOptions
   config.webDependencies = config.webDependencies || {};
   delete config.webDependencies[pkgName];
   await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify(pkgManifest, null, 2));
-  const newLockfile = await generateImportMap(config.webDependencies, lockfile);
+  const newLockfile = await generateImportMap(config.webDependencies, lockfile || undefined);
   await writeLockfile(path.join(cwd, 'snowpack.lock.json'), newLockfile);
 }

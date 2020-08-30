@@ -32,16 +32,6 @@ export function getEncodingType(ext: string): 'utf-8' | undefined {
   return UTF8_FORMATS.includes(ext) ? 'utf-8' : undefined;
 }
 
-export function parseRawPackageImport(spec: string): [string, string | null] {
-  const impParts = spec.split('/');
-  if (spec.startsWith('@')) {
-    const [scope, name, ...rest] = impParts;
-    return [`${scope}/${name}`, rest.join('/') || null];
-  }
-  const [name, ...rest] = impParts;
-  return [name, rest.join('/') || null];
-}
-
 export async function readLockfile(cwd: string): Promise<ImportMap | null> {
   try {
     var lockfileContents = fs.readFileSync(path.join(cwd, 'snowpack.lock.json'), {

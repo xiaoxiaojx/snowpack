@@ -51,11 +51,7 @@ export async function readLockfile(cwd: string): Promise<ImportMap | null> {
 }
 
 export async function writeLockfile(loc: string, importMap: ImportMap): Promise<void> {
-  const sortedImportMap: ImportMap = {imports: {}};
-  for (const key of Object.keys(importMap.imports).sort()) {
-    sortedImportMap.imports[key] = importMap.imports[key];
-  }
-  fs.writeFileSync(loc, JSON.stringify(sortedImportMap, undefined, 2), {encoding: 'utf-8'});
+  fs.writeFileSync(loc, JSON.stringify(importMap, undefined, 2), {encoding: 'utf-8'});
 }
 
 export function isTruthy<T>(item: T | false | null | undefined): item is T {

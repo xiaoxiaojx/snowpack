@@ -55,8 +55,7 @@ import {createImportResolver} from '../build/import-resolver';
 import srcFileExtensionMapping from '../build/src-file-extension-mapping';
 import {EsmHmrEngine} from '../hmr-server-engine';
 import {logger} from '../logger';
-// TODO: convert a long URL to a specifier';
-import {resolveDependencyByName, resolveDependencyByUrl} from 'skypack';
+import {lookupBySpecifier, parseRawPackageImport, fetchCDN, buildNewPackage} from 'skypack';
 import {
   scanCodeImportsExports,
   transformEsmImports,
@@ -337,11 +336,44 @@ export async function command(commandOptions: CommandOptions) {
 
   async function fetchWebModule(installUrl: string): Promise<string> {
     let body: string;
-  if (installUrl.startsWith('/-/') || installUrl.startsWith('/pin/') || installUrl.startsWith('/error/')) {
-      body = (await resolveDependencyByUrl(installUrl)).body;
+    if (
+      installUrl.startsWith('/-/') ||
+      installUrl.startsWith('/pin/') ||
+      installUrl.startsWith('/new/') ||
+      installUrl.startsWith('/error/')
+    ) {
+      body = (await fetchCDN(installUrl)).body;
     } else {
-      // TODO: convert a long (deep) specifier to a package name, but then pass the specifier down to the function
-      body = (await resolveDependencyByName(installUrl.substr(1), (config.webDependencies || {})[installUrl] || 'latest', lockfile)).body;
+      const [packageName, packagePath] = parseRawPackageImport(installUrl.substr(1));
+      if (lockfile && lockfile.imports[installUrl.substr(1)]) {
+        body = (await fetchCDN(lockfile.imports[installUrl.substr(1)])).body;
+      } else if (lockfile && lockfile.imports[packageName + '/']) {
+        body = (await fetchCDN(lockfile.imports[packageName + '/'] + packagePath)).body;
+      } else {
+        const _packageSemver = config.webDependencies && config.webDependencies[packageName];
+        if (_packageSemver) {
+          logger.warn(
+            `${packageName} not found in your snowpack.lock.json lockfile. Fetching ${packageName}@${_packageSemver}...`,
+          );
+        } else {
+          logger.warn(
+            `${packageName} not found in your package.json "webDependencies". Fetching ${packageName}@latest...`,
+          );
+        }
+        const packageSemver = _packageSemver || 'latest';
+        let lookupResponse = await lookupBySpecifier(installUrl.substr(1), packageSemver);
+        if (!lookupResponse.error && lookupResponse.importStatus === 'NEW') {
+          const buildResponse = await buildNewPackage(installUrl.substr(1), packageSemver);
+          if (!buildResponse.success) {
+            throw new Error('Package could not be built!');
+          }
+          lookupResponse = await lookupBySpecifier(installUrl.substr(1), packageSemver);
+        }
+        if (lookupResponse.error) {
+          throw lookupResponse.error;
+        }
+        body = lookupResponse.body;
+      }
     }
     return (body as string)
       .replace(/(from|import) \'\//g, `$1 '/__snowpack__/web_modules/`)

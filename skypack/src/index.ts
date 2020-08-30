@@ -1,7 +1,65 @@
 import cacache from 'cacache';
 import got, {Response} from 'got';
 import {IncomingHttpHeaders} from 'http';
-import {RESOURCE_CACHE, SKYPACK_ORIGIN, parseRawPackageImport} from './util';
+import {RESOURCE_CACHE, SKYPACK_ORIGIN, HAS_CDN_HASH_REGEX} from './util';
+import {ImportMap} from './types';
+
+export {run} from './install';
+
+export function parseRawPackageImport(spec: string): [string, string | null] {
+  const impParts = spec.split('/');
+  if (spec.startsWith('@')) {
+    const [scope, name, ...rest] = impParts;
+    return [`${scope}/${name}`, rest.join('/') || null];
+  }
+  const [name, ...rest] = impParts;
+  return [name, rest.join('/') || null];
+}
+
+export async function generateImportMap(
+  webDependencies: Record<string, string>,
+  inheritFromImportMap?: ImportMap,
+): Promise<ImportMap> {
+  const newLockfile: ImportMap = {imports: {}};
+  await Promise.all(
+    Object.entries(webDependencies).map(async ([packageName, packageSemver]) => {
+      if (inheritFromImportMap && inheritFromImportMap.imports[packageName]) {
+        newLockfile.imports[packageName] = inheritFromImportMap.imports[packageName];
+        newLockfile.imports[packageName + '/'] = inheritFromImportMap.imports[packageName + '/'];
+        return;
+      }
+      const lookupResponse = await lookupBySpecifier(packageName, packageSemver);
+      if (lookupResponse.error) {
+        throw lookupResponse.error;
+      }
+      // TODO: what if no pinned URL?
+      if (lookupResponse.pinnedUrl) {
+        let keepGoing = true;
+        const deepPinnedUrlParts = lookupResponse.pinnedUrl.split('/');
+        while (keepGoing) {
+          const investigate = deepPinnedUrlParts.pop()!;
+          if (HAS_CDN_HASH_REGEX.test(investigate)) {
+            keepGoing = false;
+            deepPinnedUrlParts.push(investigate);
+          }
+        }
+        newLockfile.imports[packageName] = lookupResponse.pinnedUrl;
+        newLockfile.imports[packageName + '/'] = deepPinnedUrlParts.join('/') + '/' + packageName + '/';
+      }
+    }),
+  );
+  const newLockfileSorted = Object.keys(newLockfile.imports).sort((a, b) => {
+    // We want 'xxx/' to come after 'xxx', so we convert it to a space (the character with the highest sort order)
+    // See: http://support.ecisolutions.com/doc-ddms/help/reportsmenu/ascii_sort_order_chart.htm
+    return a.replace(/\/$/, ' ').localeCompare(b.replace(/\/$/, ' '));
+  });
+  return {
+    imports: newLockfileSorted.reduce((prev, k) => {
+      prev[k] = newLockfile.imports[k];
+      return prev;
+    }, {}),
+  };
+}
 
 interface ResourceCacheMetadata {
   headers: IncomingHttpHeaders;
@@ -11,6 +69,7 @@ interface ResourceCacheMetadata {
 
 export async function fetchCDN(
   resourceUrl: string,
+  userAgent?: string,
 ): Promise<{
   body: string;
   headers: IncomingHttpHeaders;
@@ -40,7 +99,7 @@ export async function fetchCDN(
   let freshResult: Response<string>;
   try {
     freshResult = await got(resourceUrl, {
-      headers: {'user-agent': `snowpack/v3.0 (https://www.snowpack.dev)`},
+      headers: {'user-agent': userAgent || `snowpack/v3.0 (https://www.snowpack.dev)`},
       throwHttpErrors: false,
     });
   } catch (err) {
@@ -82,6 +141,34 @@ export async function fetchCDN(
   };
 }
 
+export type BuildNewPackageResponse =
+  | {error: Error; success: false}
+  | {
+      error: null;
+      success: boolean;
+    };
+
+export async function buildNewPackage(
+  spec: string,
+  semverString?: string,
+  userAgent?: string,
+): Promise<BuildNewPackageResponse> {
+  const [packageName, packagePath] = parseRawPackageImport(spec);
+  const lookupUrl =
+    `/new/${packageName}` +
+    (semverString ? `@${semverString}` : ``) +
+    (packagePath ? `/${packagePath}` : ``);
+  try {
+    const {statusCode} = await fetchCDN(lookupUrl, userAgent);
+    return {
+      error: null,
+      success: statusCode !== 500,
+    };
+  } catch (err) {
+    return {error: err, success: false};
+  }
+}
+
 export type LookupBySpecifierResponse =
   | {error: Error}
   | {
@@ -97,16 +184,16 @@ export type LookupBySpecifierResponse =
 
 export async function lookupBySpecifier(
   spec: string,
-  semverMap: Record<string, string> | null,
+  semverString?: string,
+  userAgent?: string,
 ): Promise<LookupBySpecifierResponse> {
   const [packageName, packagePath] = parseRawPackageImport(spec);
-  const semverString = semverMap && semverMap[packageName];
   const lookupUrl =
     `/${packageName}` +
     (semverString ? `@${semverString}` : ``) +
     (packagePath ? `/${packagePath}` : ``);
   try {
-    const {body, headers, isCached, isStale} = await fetchCDN(lookupUrl);
+    const {body, headers, isCached, isStale} = await fetchCDN(lookupUrl, userAgent);
     return {
       error: null,
       body,
@@ -143,7 +230,6 @@ export async function loadByUrl(url: string): Promise<LoadByUrlResponse> {
 export async function clearCache() {
   return Promise.all([cacache.rm.all(RESOURCE_CACHE)]);
 }
-
 
 export async function cli(args: string[]) {
   console.log(args);
