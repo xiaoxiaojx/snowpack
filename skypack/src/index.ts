@@ -209,23 +209,23 @@ export async function lookupBySpecifier(
   }
 }
 
-export type LoadByUrlResponse =
-  | {error: Error}
-  | {
-      error: null;
-      body: string;
-      isCached: boolean;
-      isStale: boolean;
-    };
+// export type LoadByUrlResponse =
+//   | {error: Error}
+//   | {
+//       error: null;
+//       body: string;
+//       isCached: boolean;
+//       isStale: boolean;
+//     };
 
-export async function loadByUrl(url: string): Promise<LoadByUrlResponse> {
-  try {
-    const {body, isCached, isStale} = await fetchCDN(url);
-    return {error: null, body, isCached, isStale};
-  } catch (err) {
-    return {error: err};
-  }
-}
+// export async function loadByUrl(url: string): Promise<LoadByUrlResponse> {
+//   try {
+//     const {body, isCached, isStale} = await fetchCDN(url);
+//     return {error: null, body, isCached, isStale};
+//   } catch (err) {
+//     return {error: err};
+//   }
+// }
 
 export async function clearCache() {
   return Promise.all([cacache.rm.all(RESOURCE_CACHE)]);
