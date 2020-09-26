@@ -1,13 +1,6 @@
 const workerpool = require('workerpool');
 let worker, pool;
 
-function wrapEnvDefine(code) {
-  if (!code.includes('process.env')) {
-    return code;
-  }
-  return `var process = {env: import.meta.env};\n${code}`
-}
-
 module.exports = function plugin(snowpackConfig, options = {}) {
   // options validation
   if (options) {
@@ -42,7 +35,11 @@ module.exports = function plugin(snowpackConfig, options = {}) {
       let {code, map} = JSON.parse(encodedResult);
 
       if (code) {
-        code = wrapEnvDefine(code);
+        // Some Babel plugins assume process.env exists, but Snowpack
+        // uses import.meta.env instead. Handle this here since it
+        // seems to be pretty common.
+        // See: https://www.pika.dev/npm/snowpack/discuss/496
+        code = code.replace(/process\.env/g, 'import.meta.env');
       }
       return {
         '.js': {
